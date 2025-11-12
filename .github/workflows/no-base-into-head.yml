@@ -1,0 +1,35 @@
+name: Enforce: No base->head merges in PR
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR HEAD
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch base branch
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.ref }}:${{ github.event.pull_request.base.ref }}
+      - name: Compute merge-base
+        id: mb
+        run: |
+          MB=$(git merge-base ${{ github.event.pull_request.base.ref }} ${{ github.event.pull_request.head.ref }})
+          echo "mb=$MB" >> $GITHUB_OUTPUT
+      - name: Detect merge commits in PR head range
+        run: |
+          MB="${{ steps.mb.outputs.mb }}"
+          HEAD="${{ github.event.pull_request.head.ref }}"
+          MERGES=$(git rev-list --merges "$MB..$HEAD" || true)
+          echo "$MERGES"
+          if [ -n "$MERGES" ]; then
+            echo "::error::Merge commits detected. Avoid 'Update branch' or the web conflict editor."
+            exit 1
+          fi
